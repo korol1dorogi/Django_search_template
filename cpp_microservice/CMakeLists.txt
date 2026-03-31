@@ -14,6 +14,9 @@ target_include_directories(cpp_microservice PRIVATE include)
 # Для Windows линкуем Winsock
 if(WIN32)
     target_link_libraries(cpp_microservice ws2_32)
+    if(MINGW)
+    add_definitions(-D_WIN32_WINNT=0x0A00)  # Windows 10
+endif()
 endif()
 
 # Для Linux линкуем pthread
