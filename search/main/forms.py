@@ -1,15 +1,12 @@
 from django import forms
-from .models import UploadedFile
 
 ALLOWED_EXTENSIONS = ['txt', 'md', 'doc', 'docx', 'fb2', 'epub', 'pdf']
 
-class UploadFileModelForm(forms.ModelForm):
-    class Meta:
-        model = UploadedFile
-        fields = ['file']
-        widgets = {
-            'file': forms.FileInput(attrs={'class': 'form-control', 'id': 'fileInput'})
-        }
+class UploadFileForm(forms.Form):
+    file = forms.FileField(
+        label='',
+        widget=forms.FileInput(attrs={'class': 'form-control', 'id': 'fileInput'})
+    )
 
     def clean_file(self):
         file = self.cleaned_data.get('file')

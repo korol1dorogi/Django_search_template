@@ -117,5 +117,30 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    {% if search_results %}
+    <div class="card mt-3">
+        <div class="card-header">
+            📄 Результаты поиска по терму "{{ search_query }}"
+        </div>
+        <div class="card-body">
+            <div class="list-group">
+                {% for result in search_results %}
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">{{ result.doc_name }}</h5>
+                            <small>{{ result.uploaded_at|date:"d.m.Y H:i" }}</small>
+                        </div>
+                        <p class="mb-1">Частота терма: {{ result.frequency }}</p>
+                        <small>Путь: {{ result.file_path }}</small>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% elif search_query and search_message %}
+    <div class="alert alert-warning mt-3">{{ search_message }}</div>
+{% endif %}
+
 </body>
 </html>

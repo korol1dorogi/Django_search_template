@@ -1,11 +1,7 @@
-#ifndef TEXTHANDLER_H
-#define TEXTHANDLER_H
-
-#include <string>
+#pragma once
+#include "json.hpp"
 
 class TextHandler {
 public:
-    static std::string process(const std::string& input);
+    static nlohmann::json process(const std::string& input);
 };
-
-#endif // TEXTHANDLER_H
