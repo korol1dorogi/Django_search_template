@@ -6,29 +6,56 @@ from django.conf import settings
 from .forms import UploadFileForm
 from .models import Document, Term, DocumentTerm
 from .utils import extract_text_from_file
+from .search_engine import SearchEngine
+import re
 
 def index(request):
     context = {}
     if request.method == 'POST':
         if 'search' in request.POST:
-            search_query = request.POST.get('search_query', '')
-            try:
-                term = Term.objects.get(term__iexact=search_query)
-                doc_terms = DocumentTerm.objects.filter(term=term).select_related('document')
-                results = []
-                for dt in doc_terms:
-                    results.append({
-                        'doc_name': dt.document.file_name,
-                        'frequency': dt.frequency,
-                        'uploaded_at': dt.document.uploaded_at,
-                        'file_path': dt.document.file_path,
-                    })
-                context['search_results'] = results
-                context['search_query'] = search_query
-            except Term.DoesNotExist:
-                context['search_results'] = []
-                context['search_query'] = search_query
-                context['search_message'] = f'Терм "{search_query}" не найден.'
+            search_query = request.POST.get('search_query', '').strip()
+            if not search_query:
+                context['search_message'] = 'Введите поисковый запрос.'
+            else:
+                # Пытаемся интерпретировать как логический запрос
+                engine = SearchEngine(search_query)
+                docs = engine.get_matching_documents()
+                if docs.exists():
+                    # Для отображения в шаблоне преобразуем в список словарей
+                    results = []
+                    # Если запрос состоит из одного терма (простой поиск) — добавим частоту
+                    # Для простоты определим, является ли запрос одним словом без операторов
+                    is_simple_term = re.match(r'^\w+$', search_query, re.UNICODE) is not None
+                    if is_simple_term:
+                        # Найдём частоту для каждого документа
+                        try:
+                            term_obj = Term.objects.get(term=search_query.lower())
+                            doc_terms = DocumentTerm.objects.filter(term=term_obj, document__in=docs)
+                            freq_dict = {dt.document_id: dt.frequency for dt in doc_terms}
+                        except Term.DoesNotExist:
+                            freq_dict = {}
+                        for doc in docs:
+                            results.append({
+                                'doc_name': doc.file_name,
+                                'frequency': freq_dict.get(doc.id, 0),
+                                'uploaded_at': doc.uploaded_at,
+                                'file_path': doc.file_path,
+                            })
+                    else:
+                        # Сложный запрос – показываем только документы без частоты
+                        for doc in docs:
+                            results.append({
+                                'doc_name': doc.file_name,
+                                'frequency': None,  # в шаблоне проверим
+                                'uploaded_at': doc.uploaded_at,
+                                'file_path': doc.file_path,
+                            })
+                    context['search_results'] = results
+                    context['search_query'] = search_query
+                else:
+                    context['search_results'] = []
+                    context['search_query'] = search_query
+                    context['search_message'] = 'Ничего не найдено.'
         elif 'upload' in request.POST:
             form = UploadFileForm(request.POST, request.FILES)
             if form.is_valid():
@@ -47,11 +74,9 @@ def index(request):
                 else:
                     # Отправка в микросервис
                     try:
-                        print(text)
                         response = requests.post('http://localhost:8080/process', json={'text': text})
                         if response.status_code == 200:
                             data = response.json()
-                            print(data)
                             terms_freq = data.get('result', {})
                             # Сохранение документа
                             doc = Document.objects.create(

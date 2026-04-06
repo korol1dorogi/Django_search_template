@@ -1,0 +1,86 @@
+1. Intersection (AND)
+Query: AI AND algorithms AND data
+Expected result: Documents that contain all three terms.
+
+Text 1 (AI in Healthcare): contains “AI”, “algorithms”, “data”
+
+Text 2 (AI in Education): contains all three
+
+Text 3 (AI in Business): contains all three
+
+Text 4 (Ethics): contains all three
+
+Text 5 (Creative): contains all three (algorithms, AI, data – “vast datasets”)
+
+Text 6 (Sustainability): contains all three
+→ Likely all 6 texts. To get a smaller intersection, try more specific terms.
+
+Better intersection example:
+bias AND fairness AND accountability
+Expected: Only Text 4 (Ethics) – since bias/fairness/accountability are concentrated there. Also maybe Text 2 touches “algorithmic bias”, but “accountability” is unique to Text 4. So intersection = {Text 4}.
+
+2. Union (OR)
+Query: healthcare OR education OR business
+Expected: Documents containing at least one of these terms.
+
+Text 1: healthcare ✓
+
+Text 2: education ✓
+
+Text 3: business ✓
+
+Text 4: none of these words → exclude
+
+Text 5: none → exclude
+
+Text 6: none → exclude
+→ Result = {Text 1, Text 2, Text 3}
+
+Broader union: privacy OR copyright OR sustainability
+
+Text 1: privacy (yes)
+
+Text 2: privacy? (no – but has “data collection”, not explicit “privacy”) Actually Text 2 says “ethical concerns about data collection” – no “privacy” word. Exclude unless stemming maps “privacy” to “private”? Better keep literal.
+
+Text 3: privacy? No
+
+Text 4: privacy (yes – “Privacy is equally critical”)
+
+Text 5: copyright (yes – “copyright questions arise”)
+
+Text 6: sustainability (yes – in title and text)
+→ Union = {Text 1, Text 4, Text 5, Text 6}
+
+3. Subtraction (NOT / WITHOUT)
+Query: AI NOT healthcare
+Find documents that contain “AI” but do not contain “healthcare”.
+
+Text 1: has both → exclude
+
+Text 2: has AI, no “healthcare” → include
+
+Text 3: has AI, no “healthcare” → include
+
+Text 4: has AI, no “healthcare” → include
+
+Text 5: has AI, no “healthcare” → include
+
+Text 6: has AI, no “healthcare” → include
+→ Result = {Text 2, Text 3, Text 4, Text 5, Text 6}
+
+More selective subtraction:
+(ethics OR bias) NOT healthcare
+Documents containing “ethics” or “bias” but excluding any that mention “healthcare”.
+
+Text 1: has bias? No (has “tumors, fractures” but not bias word) – actually Text 1 no “ethics”/”bias”. Exclude.
+
+Text 2: has “algorithmic bias” – yes. No “healthcare” – include.
+
+Text 3: has no “ethics”/”bias” – exclude.
+
+Text 4: has “bias”, “ethics” – no “healthcare” – include.
+
+Text 5: has no “ethics”/”bias” (maybe “deepfake” but not those words) – exclude.
+
+Text 6: has no – exclude.
+→ Result = {Text 2, Text 4}
