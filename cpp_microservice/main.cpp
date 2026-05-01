@@ -119,6 +119,50 @@ int main() {
         release_sem();
     });
 
+    svr.Post("/stem", [&](const httplib::Request& req, httplib::Response& res) {
+    // Подготовка освобождения семафора, если есть
+    if (sem) sem->acquire();
+    auto release_sem = [&] {
+        if (sem) sem->release();
+    };
+
+    try {
+        auto req_json = nlohmann::json::parse(req.body);
+        if (!req_json.contains("word") || !req_json["word"].is_string()) {
+            res.status = 400;
+            res.set_content(R"({"error":"Missing 'word' field"})", "application/json");
+            release_sem();
+            return;
+        }
+        std::string word = req_json.value("word", "");
+        // Используем ту же логику, что и в TextHandler для одного слова
+        std::string stem;
+        if (contains_cyrillic(word.c_str())) {
+            char* s = stem_russian(word.c_str());
+            if (s) {
+                stem = s;
+                free(s);
+            } else {
+                stem = word; // fallback
+            }
+        } else {
+            char* s = stem_english(word.c_str());
+            if (s) {
+                stem = s;
+                free(s);
+            } else {
+                stem = word;
+            }
+        }
+        nlohmann::json resp = {{"stem", stem}};
+        res.set_content(resp.dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] /stem parse failed: " << e.what() << std::endl;
+        res.status = 400;
+        res.set_content(R"({"error":"Invalid JSON"})", "application/json");
+    }
+    release_sem();
+    });
     // 6. Запуск сервера
     std::cout << "[INFO] Server starting on port " << port << std::endl;
     std::cout << "[INFO] Thread pool size: " << thread_pool_size << std::endl;

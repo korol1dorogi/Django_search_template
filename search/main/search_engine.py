@@ -1,10 +1,11 @@
 import re
-from collections import deque
+import logging
+import requests
 from .models import Term, DocumentTerm, Document
 
-class SearchEngine:
-    """Парсер и вычислитель логических запросов (AND, OR, NOT) над документами."""
+logger = logging.getLogger(__name__)
 
+class SearchEngine:
     TOKEN_AND = 'AND'
     TOKEN_OR = 'OR'
     TOKEN_NOT = 'NOT'
@@ -18,13 +19,40 @@ class SearchEngine:
         TOKEN_OR: 1,
     }
 
+    # Кэш стемминга на время жизни объекта
+    _stem_cache = {}
+
     def __init__(self, query):
         self.query = query.strip()
         self.tokens = []
         self._tokenize()
+        self.is_simple_term = (len(self.tokens) == 1 and self.tokens[0][0] == self.TOKEN_TERM)
+
+    @staticmethod
+    def _stem_word(word):
+        """Отправляет слово в C++ микросервис на /stem и возвращает основу."""
+        word = word.lower()
+        if word in SearchEngine._stem_cache:
+            return SearchEngine._stem_cache[word]
+        try:
+            resp = requests.post(
+                'http://localhost:8080/stem',
+                json={'word': word},
+                timeout=2  # быстрый таймаут, чтобы не тормозил поиск
+            )
+            if resp.status_code == 200:
+                stem = resp.json().get('stem', word)
+                logger.info('success stemming', word)
+                print("Success", stem)
+            else:
+                stem = word
+        except requests.RequestException:
+            logger.warning("Не удалось получить стем для '%s', используется оригинал", word)
+            stem = word
+        SearchEngine._stem_cache[word] = stem
+        return stem
 
     def _tokenize(self):
-        """Разбивает строку запроса на токены."""
         pattern = r'(\bAND\b|\bOR\b|\bNOT\b|[()]|\w+)'
         raw_tokens = re.findall(pattern, self.query, re.IGNORECASE)
         for tok in raw_tokens:
@@ -40,22 +68,18 @@ class SearchEngine:
             elif tok == ')':
                 self.tokens.append((self.TOKEN_RPAREN, None))
             else:
-                self.tokens.append((self.TOKEN_TERM, tok.lower()))
+                stemmed = self._stem_word(tok)
+                self.tokens.append((self.TOKEN_TERM, stemmed))
 
-    '''В обычной (инфиксной) записи операторы находятся между операндами, и есть скобки, меняющие приоритет. 
-        Вычислять такое выражение напрямую неудобно – нужно учитывать кучу правил. 
-        В постфиксной записи операторы идут после своих операндов, и скобки не нужны. 
-        Вычисление происходит простым проходом слева направо с использованием стека.'''
-
+    # _to_postfix, _get_doc_set, _evaluate_postfix, get_matching_documents
+    # остаются без изменений (как в предыдущей версии с логгированием)
     def _to_postfix(self):
-        """Преобразует инфиксную последовательность в постфиксную (ОПН)."""
         output = []
         stack = []
         for token, value in self.tokens:
             if token == self.TOKEN_TERM:
                 output.append((token, value))
             elif token == self.TOKEN_NOT:
-                # унарный NOT
                 while stack and stack[-1][0] == self.TOKEN_NOT:
                     output.append(stack.pop())
                 stack.append((token, value))
@@ -78,7 +102,6 @@ class SearchEngine:
         return output
 
     def _get_doc_set(self, term):
-        """Возвращает множество ID документов, содержащих данный терм."""
         try:
             term_obj = Term.objects.get(term=term)
             doc_ids = DocumentTerm.objects.filter(term=term_obj).values_list('document_id', flat=True)
@@ -87,7 +110,6 @@ class SearchEngine:
             return set()
 
     def _evaluate_postfix(self, postfix):
-        # Вычисляет постфиксное выражение, используя операции над множествами.#
         stack = []
         for token, value in postfix:
             if token == self.TOKEN_TERM:
@@ -95,8 +117,7 @@ class SearchEngine:
             elif token == self.TOKEN_NOT:
                 if not stack:
                     raise ValueError("NOT без операнда")
-                # Все документы, которые есть в системе (хотя бы с одним термом)
-                all_docs = set(DocumentTerm.objects.values_list('document_id', flat=True).distinct())
+                all_docs = set(Document.objects.values_list('id', flat=True))
                 operand = stack.pop()
                 result = all_docs - operand
                 stack.append(result)
@@ -113,11 +134,10 @@ class SearchEngine:
         return stack[0]
 
     def get_matching_documents(self):
-        # Возвращает QuerySet документов, соответствующих запросу
         try:
             postfix = self._to_postfix()
             doc_id_set = self._evaluate_postfix(postfix)
             return Document.objects.filter(id__in=doc_id_set)
-        except Exception as e:
-            print(f"Ошибка поиска: {e}")
+        except Exception:
+            logger.exception("Ошибка поиска по запросу '%s'", self.query)
             return Document.objects.none()

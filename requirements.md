@@ -1,0 +1,13 @@
+asgiref==3.11.1
+certifi==2026.4.22
+charset-normalizer==3.4.7
+Django==6.0.4
+idna==3.13
+lxml==6.1.0
+PyPDF2==3.0.1
+python-docx==1.2.0
+requests==2.33.1
+sqlparse==0.5.5
+typing_extensions==4.15.0
+tzdata==2026.2
+urllib3==2.6.3
