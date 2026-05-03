@@ -52,6 +52,23 @@
             margin-top: 40px;
             color: #6c757d;
         }
+        /* Стили для группы кнопок операторов */
+        .operator-btns .btn {
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+        .is-valid-query {
+            border-color: #198754 !important;
+            box-shadow: 0 0 0 0.25rem rgba(25,135,84,0.25) !important;
+        }
+        .is-invalid-query {
+            border-color: #dc3545 !important;
+            box-shadow: 0 0 0 0.25rem rgba(220,53,69,0.25) !important;
+        }
+        #validationMessage {
+            font-size: 0.875rem;
+            min-height: 1.5em;
+        }
     </style>
 </head>
 <body>
@@ -61,13 +78,24 @@
         <!-- Карточка поиска -->
         <div class="card">
             <div class="card-header">
-                🔍 Поиск
+                Поиск
             </div>
             <div class="card-body">
                 <form method="post">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <input type="text" name="search_query" class="form-control" placeholder="Введите поисковый запрос (AND, OR, NOT, скобки)..." value="{{ search_query|default:'' }}">
+                        <input type="text" name="search_query" id="searchQueryInput" class="form-control"
+                        placeholder="Введите поисковый запрос (AND, OR, NOT, скобки)..." 
+                        value="{{ search_query|default:'' }}">
+                        <div id="validationMessage" class="mt-1"></div>
+                    </div>
+                    <!-- Кнопки для вставки операторов -->
+                    <div class="operator-btns mb-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertOperator(' AND ')">AND</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertOperator(' OR ')">OR</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertOperator(' NOT ')">NOT</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertOperator('(')">(</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertOperator(')')">)</button>
                     </div>
                     <button type="submit" name="search" class="btn btn-primary">Найти</button>
                 </form>
@@ -118,6 +146,31 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
 
+    <!-- Скрипт для вставки операторов с учётом позиции курсора -->
+    <script>
+        function insertOperator(text) {
+            const input = document.getElementById('searchQueryInput');
+            if (!input) return;
+            // Фокусируем поле, если не в фокусе
+            input.focus();
+            // Для современных браузеров используем selectionStart/selectionEnd
+            if (typeof input.selectionStart !== 'undefined') {
+                const start = input.selectionStart;
+                const end = input.selectionEnd;
+                const before = input.value.substring(0, start);
+                const after = input.value.substring(end);
+                input.value = before + text + after;
+                // Ставим курсор после вставленного текста
+                input.selectionStart = input.selectionEnd = start + text.length;
+            } else {
+                // Запасной вариант для старых IE
+                input.value += text;
+            }
+            // Вызываем событие input, если на поле висят обработчики (не обязательно)
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    </script>
+
     {% if search_results %}
     <div class="container" style="max-width: 800px; margin-top: -20px;">
         <div class="card mt-3">
@@ -147,5 +200,73 @@
         <div class="alert alert-warning mt-3">{{ search_message }}</div>
     </div>
     {% endif %}
+    <script>
+        // Функция вставки операторов (уже есть, если добавил кнопки)
+        function insertOperator(text) {
+            const input = document.getElementById('searchQueryInput');
+            if (!input) return;
+            input.focus();
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const before = input.value.substring(0, start);
+            const after = input.value.substring(end);
+            input.value = before + text + after;
+            input.selectionStart = input.selectionEnd = start + text.length;
+            // Триггерим input для проверки валидации
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    
+        // Debounce
+        function debounce(fn, delay) {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+    
+        async function validateQuery(query) {
+            const msgDiv = document.getElementById('validationMessage');
+            const input = document.getElementById('searchQueryInput');
+            if (!input) return;
+    
+            if (query.trim() === '') {
+                input.classList.remove('is-valid-query', 'is-invalid-query');
+                msgDiv.textContent = '';
+                return;
+            }
+    
+            try {
+                const response = await fetch(`/validate-query/?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                if (data.valid) {
+                    input.classList.add('is-valid-query');
+                    input.classList.remove('is-invalid-query');
+                    msgDiv.innerHTML = '<span class="text-success">✓ ' + data.message + '</span>';
+                } else {
+                    input.classList.add('is-invalid-query');
+                    input.classList.remove('is-valid-query');
+                    msgDiv.innerHTML = '<span class="text-danger">⚠ ' + data.message + '</span>';
+                }
+            } catch (e) {
+                // Сеть недоступна – просто сброс
+                input.classList.remove('is-valid-query', 'is-invalid-query');
+                msgDiv.textContent = '';
+            }
+        }
+    
+        const searchInput = document.getElementById('searchQueryInput');
+        if (searchInput) {
+            const debouncedValidate = debounce(function() {
+                validateQuery(this.value);
+            }, 500);
+            searchInput.addEventListener('input', debouncedValidate);
+    
+            // Проверка при загрузке, если в поле уже есть значение
+            if (searchInput.value.trim() !== '') {
+                validateQuery(searchInput.value);
+            }
+        }
+    </script>
 </body>
 </html>

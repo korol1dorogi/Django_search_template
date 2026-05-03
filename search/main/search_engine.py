@@ -1,6 +1,7 @@
 import re
 import logging
 import requests
+from django.conf import settings
 from .models import Term, DocumentTerm, Document
 
 logger = logging.getLogger(__name__)
@@ -36,14 +37,13 @@ class SearchEngine:
             return SearchEngine._stem_cache[word]
         try:
             resp = requests.post(
-                'http://localhost:8080/stem',
+                settings.MICROSERVICE_STEM_URL,
                 json={'word': word},
                 timeout=2  # быстрый таймаут, чтобы не тормозил поиск
             )
             if resp.status_code == 200:
                 stem = resp.json().get('stem', word)
-                logger.info('success stemming', word)
-                print("Success", stem)
+                logger.info('Success stemming: %s', word)
             else:
                 stem = word
         except requests.RequestException:

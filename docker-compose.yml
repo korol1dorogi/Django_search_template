@@ -1,0 +1,48 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  cpp:
+    build: ./cpp_microservice
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
+
+  django:
+    build: ./search
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - MICROSERVICE_PROCESS_URL=http://cpp:8080/process
+      - MICROSERVICE_STEM_URL=http://cpp:8081/stem
+      - DJANGO_SETTINGS_MODULE=search.settings
+    volumes:
+      - ./search:/app
+      - ./search/media:/app/media
+    depends_on:
+      - redis
+      - cpp
+
+  celery:
+    build: ./search
+    command: celery -A search worker --loglevel=info --pool=solo
+    environment:
+      - REDIS_HOST=redis
+      - MICROSERVICE_PROCESS_URL=http://cpp:8080/process
+      - DJANGO_SETTINGS_MODULE=search.settings
+    volumes:
+      - ./search:/app
+      - ./search/media:/app/media
+    depends_on:
+      - redis
+      - cpp
+
+volumes:
+  media_data:

@@ -125,14 +125,20 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Redis как брокер
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-
+REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+CELERY_BROKER_URL = f'redis://{REDIS_HOST}:6379/0'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:6379/1'
 # Для RabbitMQ: 'amqp://guest:guest@localhost:5672//'
 
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/1'   # хранить результаты тоже в Redis (если нужны)
+# хранить результаты тоже в Redis (если нужны)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Moscow'  # подставьте свою зону
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60   # ограничение времени выполнения задачи (в секундах)
+
+
+# URL микросервисов
+MICROSERVICE_PROCESS_URL = os.environ.get('MICROSERVICE_PROCESS_URL', 'http://localhost:8080/process')
+MICROSERVICE_STEM_URL = os.environ.get('MICROSERVICE_STEM_URL', 'http://localhost:8081/stem')

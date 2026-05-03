@@ -9,7 +9,7 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 colorama==0.4.6
-Django==6.0.4
+Django
 EbookLib==0.20
 idna==3.13
 kombu==5.6.2

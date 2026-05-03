@@ -1,5 +1,8 @@
 import logging
 from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+from .search_parser import parse_search_query, QuerySyntaxError
 from .forms import UploadFileForm
 from .models import Document, Term, DocumentTerm
 from .search_engine import SearchEngine
@@ -13,6 +16,13 @@ def index(request):
         if 'search' in request.POST:
             # --- Поиск ---
             search_query = request.POST.get('search_query', '').strip()
+            try:
+                parse_search_query(search_query)
+            except QuerySyntaxError as e:
+                context['search_message'] = f'Ошибка в запросе: {e}'
+                context['search_query'] = search_query
+                context['form'] = UploadFileForm()
+                return render(request, 'main/index.html', context)
             if not search_query:
                 context['search_message'] = 'Введите поисковый запрос.'
             else:
@@ -56,6 +66,7 @@ def index(request):
                     context['search_message'] = 'Ничего не найдено.'
 
         elif 'upload' in request.POST:
+            
             # --- Загрузка файла ---
             form = UploadFileForm(request.POST, request.FILES)
             if form.is_valid():
@@ -78,3 +89,15 @@ def index(request):
 
     context['form'] = UploadFileForm()
     return render(request, 'main/index.html', context)
+
+
+@require_GET
+def validate_query(request):
+    query = request.GET.get('query', '')
+    if not query.strip():
+        return JsonResponse({'valid': True, 'message': 'Пустой запрос'})
+    try:
+        parse_search_query(query)
+        return JsonResponse({'valid': True, 'message': 'Запрос корректен'})
+    except QuerySyntaxError as e:
+        return JsonResponse({'valid': False, 'message': str(e)})

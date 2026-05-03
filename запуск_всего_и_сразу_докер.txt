@@ -1,0 +1,4 @@
+docker-compose up -d
+
+для остановки
+docker-compose down
