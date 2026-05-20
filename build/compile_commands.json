@@ -1,0 +1,14 @@
+[
+{
+  "directory": "C:/Users/User/Desktop/sakod_kursach/Django_search_template/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_WIN32_WINNT=0x0A00 @CMakeFiles/cpp_microservice.dir/includes_CXX.rsp -g -std=gnu++20 -o CMakeFiles\\cpp_microservice.dir\\main.cpp.obj -c C:\\Users\\User\\Desktop\\sakod_kursach\\Django_search_template\\cpp_microservice\\main.cpp",
+  "file": "C:/Users/User/Desktop/sakod_kursach/Django_search_template/cpp_microservice/main.cpp",
+  "output": "CMakeFiles/cpp_microservice.dir/main.cpp.obj"
+},
+{
+  "directory": "C:/Users/User/Desktop/sakod_kursach/Django_search_template/build",
+  "command": "C:\\msys64\\mingw64\\bin\\g++.exe -D_WIN32_WINNT=0x0A00 @CMakeFiles/cpp_microservice.dir/includes_CXX.rsp -g -std=gnu++20 -o CMakeFiles\\cpp_microservice.dir\\TextHandler.cpp.obj -c C:\\Users\\User\\Desktop\\sakod_kursach\\Django_search_template\\cpp_microservice\\TextHandler.cpp",
+  "file": "C:/Users/User/Desktop/sakod_kursach/Django_search_template/cpp_microservice/TextHandler.cpp",
+  "output": "CMakeFiles/cpp_microservice.dir/TextHandler.cpp.obj"
+}
+]

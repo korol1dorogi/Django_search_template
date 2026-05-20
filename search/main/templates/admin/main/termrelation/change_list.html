@@ -1,0 +1,64 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+
+    {# ---- Кнопка сжатия ---- #}
+    <li>
+        <form method="post" action="compress/" style="display:inline;">
+            {% csrf_token %}
+            {% if can_compress %}
+                <button type="submit" class="button"
+                        style="background:#c0392b; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer;"
+                        title="Оставить {{ compress_keep_count }} связей с наибольшим весом, удалить {{ compress_delete_count }}">
+                    🗜&nbsp;φ-компрессия
+                    &nbsp;<small style="opacity:.85;">(−{{ compress_delete_count }} из {{ total_relations }})</small>
+                </button>
+            {% else %}
+                <button type="button" class="button" disabled
+                        style="opacity:.5; padding:6px 14px; border-radius:4px;">
+                    🗜&nbsp;φ-компрессия&nbsp;<small>(нет данных)</small>
+                </button>
+            {% endif %}
+        </form>
+    </li>
+
+    {# ---- Кнопка восстановления (только если архив непуст) ---- #}
+    {% if archive_count %}
+    <li>
+        <form method="post" action="restore/" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="button default"
+                    style="background:#27ae60; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer;"
+                    title="Вернуть {{ archive_count }} пар из архива с весом 1.0">
+                ↩&nbsp;Восстановить архив
+                &nbsp;<small style="opacity:.85;">({{ archive_count }} пар)</small>
+            </button>
+        </form>
+    </li>
+    {% endif %}
+
+    {{ block.super }}
+{% endblock %}
+
+{% block content %}
+
+    {# ---- Информационная панель ---- #}
+    <div style="background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px;
+                padding:14px 20px; margin-bottom:18px; font-size:13px; color:#495057;">
+        <strong>Матрица смежности (TermRelation)</strong>
+        &nbsp;·&nbsp;
+        Активных связей: <strong>{{ total_relations }}</strong>
+        &nbsp;·&nbsp;
+        В архиве: <strong>{{ archive_count }}</strong>
+        {% if can_compress %}
+            &nbsp;·&nbsp;
+            Следующее сжатие: оставить <strong>{{ compress_keep_count }}</strong>,
+            удалить <strong>{{ compress_delete_count }}</strong>
+            &nbsp;
+            <span style="color:#888;">(×&nbsp;1/φ&nbsp;≈&nbsp;0.618)</span>
+        {% endif %}
+    </div>
+
+    {{ block.super }}
+{% endblock %}

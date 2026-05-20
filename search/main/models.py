@@ -36,6 +36,23 @@ class DocumentTerm(models.Model):
         ]
 
 
+class TermRelationArchive(models.Model):
+    """
+    Пары термов, удалённые при φ-компрессии матрицы смежности.
+    Хранятся для последующего восстановления (вес при восстановлении = 1.0).
+    Пара хранится в каноническом порядке (term1.id < term2.id).
+    """
+    term1 = models.ForeignKey(Term, on_delete=models.CASCADE, related_name='+')
+    term2 = models.ForeignKey(Term, on_delete=models.CASCADE, related_name='+')
+    compressed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('term1', 'term2')
+
+    def __str__(self):
+        return f"[archive] {self.term1} <-> {self.term2}"
+
+
 class TermRelation(models.Model):
     """
     Матрица смежности для отношений между термами.

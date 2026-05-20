@@ -1,0 +1,17 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+    {% if not add %}
+    <li>
+        <form method="post" action="{% url 'admin:main_document_retry' original.pk %}" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="button"
+                    style="background:#1565c0; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer;">
+                ⟳&nbsp;Повторить обработку
+            </button>
+        </form>
+    </li>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}

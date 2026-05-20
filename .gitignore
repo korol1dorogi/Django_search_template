@@ -10,6 +10,6 @@ __pycache__/
 *.swo
 *~
 .DS_Store
-Thumbs.db
-build/
-media/
+generate_pz.py
+~$*
+*.pyc

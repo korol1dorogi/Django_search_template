@@ -24,7 +24,9 @@ SECRET_KEY = 'django-insecure-tp*=+v-7ioe1mt^+h9guo00b-n+8e^6j=z!x9m%qrkb$yf41pm
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-
+if DEBUG:
+    DATA_UPLOAD_MAX_NUMBER_FILES = 1000
+else: DATA_UPLOAD_MAX_NUMBER_FILES = 10
 ALLOWED_HOSTS = []
 
 
@@ -77,6 +79,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {
+            'timeout': 30,  # секунд ждать снятия write-lock перед OperationalError
+        },
     }
 }
 
@@ -141,4 +146,7 @@ CELERY_TASK_TIME_LIMIT = 30 * 60   # ограничение времени вы�
 
 # URL микросервисов
 MICROSERVICE_PROCESS_URL = os.environ.get('MICROSERVICE_PROCESS_URL', 'http://localhost:8080/process')
-MICROSERVICE_STEM_URL = os.environ.get('MICROSERVICE_STEM_URL', 'http://localhost:8081/stem')
+MICROSERVICE_STEM_URL = os.environ.get('MICROSERVICE_STEM_URL', 'http://localhost:8080/stem')
+
+
+

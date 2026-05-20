@@ -661,73 +661,168 @@ static void incWord(WordArray* arr, int idx) {
 }
 
 // ---------------------------------------------------------------------------
+// Приведение UTF-8 строки к нижнему регистру (на месте в dst)
+// ---------------------------------------------------------------------------
+static void lowercase_utf8(const char* src, char* dst, size_t cap) {
+    const char* p = src;
+    char* d = dst;
+    char* end = dst + cap - 1;
+    while (*p && d < end) {
+        const char* start = p;
+        unsigned int cp = next_codepoint(p);
+        unsigned int lo = to_lower_cp(cp);
+        char tmp[4];
+        int n = write_utf8(lo, tmp);
+        if (d + n < end) { memcpy(d, tmp, n); d += n; }
+    }
+    *d = '\0';
+}
+
+// ---------------------------------------------------------------------------
+// Проверка стоп-слова по оригинальной (несведённой) форме в нижнем регистре.
+// Ловим местоимения, союзы, предлоги, частицы ДО стемминга, потому что
+// стеммер изменяет их форму и они не совпадают с питоновским STOPWORDS.
+// ---------------------------------------------------------------------------
+static bool is_stopword_raw(const char* lower_word) {
+    static const char* const STOPS[] = {
+        // --- Русские ---
+        // Местоимения (все формы)
+        "я","мне","меня","мной","мною",
+        "ты","тебе","тебя","тобой","тобою",
+        "он","его","ему","него","нему","них","ним","ними",
+        "она","ей","её","ее","ней",
+        "оно",
+        "мы","нас","нам","нами",
+        "вы","вас","вам","вами",
+        "они","их","им",
+        "себя","себе","собой","собою",
+        "этот","эта","это","эти","этого","этой","этих","этом","этим","эту",
+        "тот","та","те","того","той","тех","том","тем","ту",
+        "весь","вся","всё","все","всего","всей","всех","всем","всеми",
+        "который","которая","которое","которые","которого","которой",
+        "которых","которым","которыми","которому",
+        "кто","кого","кому","кем","ком",
+        "что","чего","чему","чем","чём",
+        "какой","какая","какое","какие",
+        "чей","чья","чьё","чьи",
+        "свой","своя","своё","свои","своего","своей","своих","своим","своими",
+        "сам","сама","само","сами","самого","самой","самих","самим",
+        "такой","такая","такое","такие",
+        "каждый","каждая","каждое","каждые",
+        "любой","любая","любое","любые",
+        "другой","другая","другое","другие",
+        "никто","ничто","некто","нечто",
+        // Союзы и частицы
+        "и","а","но","да","или","либо","ни","же","бы","б","ли",
+        "то","не","ни","вот","вон","ну","ой","ах","эх",
+        "что","чтобы","чтоб","как","когда","если","хотя","хоть",
+        "пока","раз","коли","ежели","дабы","лишь","только",
+        "также","тоже","зато","однако","притом","причём",
+        "ведь","впрочем","конечно","наверное","кажется","пожалуй",
+        "видимо","очевидно","пусть","пускай",
+        // Предлоги
+        "в","во","на","с","со","к","ко","за","у","о","об","обо",
+        "из","до","от","по","при","про","через","над","под",
+        "перед","передо","после","между","вместо","вокруг","около",
+        "среди","для","без","вдоль","внутри","возле","вопреки",
+        "кроме","мимо","напротив","подле","посреди","ради","сверх",
+        "согласно","сквозь","путём",
+        // Вспомогательные глаголы
+        "быть","был","была","было","были","есть","будет","будут",
+        "буду","будешь","будем","будете","бывает","бывают",
+        "стать","стал","стала","стало","стали",
+        "являться","является","являются","являлся",
+        // Наречия и модальные
+        "уже","ещё","еще","даже","именно","просто","очень","совсем",
+        "так","тут","там","сюда","туда","куда","откуда","здесь",
+        "тогда","потом","сейчас","теперь","всегда","никогда",
+        "иногда","часто","редко","много","мало","немного","чуть",
+        "едва","более","менее","весьма","слишком","почти",
+        "зачем","почему","поэтому","потому","снова","опять","вдруг",
+        "сразу","тотчас","можно","нельзя","надо","нужно",
+        // --- Английские ---
+        "a","an","the",
+        "and","or","but","nor","so","yet","for","both","either","neither",
+        "although","though","because","since","while","whereas","if","unless",
+        "until","when","whenever","where","wherever","after","before","as","than",
+        "in","on","at","to","of","with","by","from","into","onto","upon",
+        "out","off","up","down","over","under","through","about","above","below",
+        "between","among","around","along","across","behind","beside","besides",
+        "beyond","despite","during","except","inside","near","outside","past",
+        "since","throughout","toward","underneath","within","without",
+        "i","me","my","myself","you","your","yours","yourself","yourselves",
+        "he","him","his","himself","she","her","hers","herself",
+        "it","its","itself","we","us","our","ours","ourselves",
+        "they","them","their","theirs","themselves",
+        "who","whom","whose","which","what","this","that","these","those",
+        "is","are","was","were","be","been","being",
+        "have","has","had","having","do","does","did","doing",
+        "will","would","could","should","may","might","shall","can","must",
+        "not","no","nor","never","ever","already","still","just","also","too",
+        "very","quite","rather","much","more","most","less","few","only","even",
+        "here","there","now","then","so","however","therefore","thus","hence",
+        "perhaps","maybe","almost","enough",
+        nullptr
+    };
+    for (int i = 0; STOPS[i]; ++i)
+        if (strcmp(lower_word, STOPS[i]) == 0) return true;
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // Основная функция обработки текста
 // ---------------------------------------------------------------------------
 nlohmann::json TextHandler::process(const std::string& input) {
     WordArray words;
     initWordArray(&words);
 
-    // Буфер для накопления символов текущего слова (UTF-8, поэтому 1024 байт достаточно)
     char buffer[1024];
-    size_t pos = 0;   // позиция в buffer (байты)
+    size_t pos = 0;
 
     const char* p = input.c_str();
     while (*p) {
-        // запоминаем начало текущего байта
         const char* start = p;
-        unsigned int cp = next_codepoint(p); // p уже сдвинулось
+        unsigned int cp = next_codepoint(p);
         int bytelen = (int)(p - start);
 
         if (is_letter_or_digit_cp(cp)) {
-            // Если влезает в буфер – копируем байты
             if (pos + bytelen < sizeof(buffer)) {
                 memcpy(buffer + pos, start, bytelen);
                 pos += bytelen;
-            } else {
-                // Слово слишком длинное, игнорируем остаток
-                // В базовой версии о дальнейших символах забываем, можно закостылить в целом решение, но я не знаю ни об одном слове длиной больше даже 254 символов, поэтому смысла нет
             }
         } else {
-            // Найден разделитель – конец слова
             if (pos > 0) {
                 buffer[pos] = '\0';
-
-                // Определяем, русское слово или нет, и вызываем соответствующий стеммер
-                char* stem = NULL;
-                if (contains_cyrillic(buffer)) {
-                    stem = stem_russian(buffer);
-                } else {
-                    stem = stem_english(buffer);
-                }
-                if (stem) {
-                    int idx = findWord(&words, stem);
-                    if (idx == -1) {
-                        addWord(&words, stem);
-                    } else {
-                        incWord(&words, idx);
+                char lower_buf[1024];
+                lowercase_utf8(buffer, lower_buf, sizeof(lower_buf));
+                if (!is_stopword_raw(lower_buf)) {
+                    char* stem = contains_cyrillic(buffer) ? stem_russian(buffer) : stem_english(buffer);
+                    if (stem) {
+                        int idx = findWord(&words, stem);
+                        if (idx == -1) addWord(&words, stem);
+                        else           incWord(&words, idx);
+                        free(stem);
                     }
-                    free(stem);
                 }
                 pos = 0;
             }
         }
     }
-    // Если текст заканчивается на слове
     if (pos > 0) {
         buffer[pos] = '\0';
-        char* stem = contains_cyrillic(buffer) ? stem_russian(buffer) : stem_english(buffer);
-        if (stem) {
-            int idx = findWord(&words, stem);
-            if (idx == -1) {
-                addWord(&words, stem);
-            } else {
-                incWord(&words, idx);
+        char lower_buf[1024];
+        lowercase_utf8(buffer, lower_buf, sizeof(lower_buf));
+        if (!is_stopword_raw(lower_buf)) {
+            char* stem = contains_cyrillic(buffer) ? stem_russian(buffer) : stem_english(buffer);
+            if (stem) {
+                int idx = findWord(&words, stem);
+                if (idx == -1) addWord(&words, stem);
+                else           incWord(&words, idx);
+                free(stem);
             }
-            free(stem);
         }
     }
 
-    // Сборка JSON-ответа
     nlohmann::json result;
     for (size_t i = 0; i < words.size; ++i) {
         result[words.entries[i].word] = words.entries[i].freq;

@@ -21,7 +21,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - MICROSERVICE_PROCESS_URL=http://cpp:8080/process
-      - MICROSERVICE_STEM_URL=http://cpp:8081/stem
+      - MICROSERVICE_STEM_URL=http://cpp:8080/stem
       - DJANGO_SETTINGS_MODULE=search.settings
     volumes:
       - ./search:/app
@@ -32,7 +32,7 @@ services:
 
   celery:
     build: ./search
-    command: celery -A search worker --loglevel=info --pool=solo
+    command: celery -A search worker --loglevel=info --pool=prefork --concurrency=4
     environment:
       - REDIS_HOST=redis
       - MICROSERVICE_PROCESS_URL=http://cpp:8080/process

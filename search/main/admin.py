@@ -1,7 +1,14 @@
+import math
 from django.contrib import admin
 from django.db.models import Count, Q
+from django.http import HttpResponseRedirect
+from django.shortcuts import get_object_or_404
+from django.urls import path
 from django.utils.html import format_html
-from .models import Document, Term, DocumentTerm, TermRelation
+from .models import Document, Term, DocumentTerm, TermRelation, TermRelationArchive
+from .tasks import process_uploaded_file
+
+PHI = (1 + math.sqrt(5)) / 2  # ≈ 1.618033...
 
 
 class DocumentTermInline(admin.TabularInline):
@@ -31,6 +38,9 @@ class DocumentAdmin(admin.ModelAdmin):
     readonly_fields = ('uuid', 'uploaded_at', 'processed', 'file_preview')
     date_hierarchy = 'uploaded_at'
     inlines = [DocumentTermInline]
+    change_list_template = 'admin/main/document/change_list.html'
+    change_form_template = 'admin/main/document/change_form.html'
+    actions = ['retry_processing']
 
     fieldsets = (
         ('Основная информация', {
@@ -88,7 +98,57 @@ class DocumentAdmin(admin.ModelAdmin):
         return qs.annotate(_terms_count=Count('documentterm'))
 
     def has_delete_permission(self, request, obj=None):
-        return True  # или по условию
+        return True
+
+    @admin.action(description='Повторить обработку выбранных документов')
+    def retry_processing(self, request, queryset):
+        count = 0
+        for doc in queryset:
+            doc.processed = False
+            doc.save(update_fields=['processed'])
+            process_uploaded_file.delay(doc.id)
+            count += 1
+        self.message_user(request, f'{count} документ(ов) поставлено в очередь на повторную обработку.')
+
+    def get_urls(self):
+        custom = [
+            path('wipe/', self.admin_site.admin_view(self.wipe_view),
+                 name='main_document_wipe'),
+            path('<int:object_id>/retry/', self.admin_site.admin_view(self.retry_view),
+                 name='main_document_retry'),
+        ]
+        return custom + super().get_urls()
+
+    def retry_view(self, request, object_id):
+        if request.method != 'POST':
+            return HttpResponseRedirect('../../')
+        doc = get_object_or_404(Document, pk=object_id)
+        doc.processed = False
+        doc.save(update_fields=['processed'])
+        process_uploaded_file.delay(doc.id)
+        self.message_user(request, f'Документ «{doc.original_file_name}» поставлен в очередь на повторную обработку.')
+        return HttpResponseRedirect('../../')
+
+    def wipe_view(self, request):
+        if request.method != 'POST':
+            return HttpResponseRedirect('../')
+
+        # Удаляем физические файлы
+        for doc in Document.objects.all():
+            try:
+                doc.file.delete(save=False)
+            except Exception:
+                pass
+
+        # Очищаем все прикладные таблицы в безопасном порядке
+        TermRelationArchive.objects.all().delete()
+        TermRelation.objects.all().delete()
+        DocumentTerm.objects.all().delete()
+        Document.objects.all().delete()
+        Term.objects.all().delete()
+
+        self.message_user(request, 'Все документы, термины и связи удалены. Пользователи и служебные таблицы Django сохранены.')
+        return HttpResponseRedirect('../')
 
 
 @admin.register(Term)
@@ -160,11 +220,16 @@ class DocumentTermAdmin(admin.ModelAdmin):
 
 @admin.register(TermRelation)
 class TermRelationAdmin(admin.ModelAdmin):
-    list_display = ('term1_name', 'term2_name', 'weight')
+    list_display = ('term1_name', 'term2_name', 'weight_display')
     search_fields = ('term1__term', 'term2__term')
     raw_id_fields = ('term1', 'term2')
-    list_filter = ('weight',)
+    ordering = ('-weight',)
     list_select_related = ('term1', 'term2')
+    change_list_template = 'admin/main/termrelation/change_list.html'
+
+    # ------------------------------------------------------------------
+    # Отображение
+    # ------------------------------------------------------------------
 
     def term1_name(self, obj):
         return obj.term1.term
@@ -176,8 +241,136 @@ class TermRelationAdmin(admin.ModelAdmin):
     term2_name.short_description = 'Терм 2'
     term2_name.admin_order_field = 'term2__term'
 
-    # Дополнительно: автоматическое упорядочивание при создании через админку
-    # уже реализовано в модели, но можно дополнительно сообщить.
+    def weight_display(self, obj):
+        color = 'green' if obj.weight >= 1.0 else ('gray' if obj.weight > 0 else 'red')
+        return format_html('<span style="color:{}">{}</span>', color, f'{obj.weight:.4f}')
+    weight_display.short_description = 'Вес'
+    weight_display.admin_order_field = 'weight'
+
     def save_model(self, request, obj, form, change):
-        # Модель сама упорядочит, но на всякий случай оставим вызов родного save
         super().save_model(request, obj, form, change)
+
+    # ------------------------------------------------------------------
+    # Статистика для шаблона
+    # ------------------------------------------------------------------
+
+    def changelist_view(self, request, extra_context=None):
+        total = TermRelation.objects.count()
+        keep = math.floor(total / PHI) if total else 0
+        extra_context = extra_context or {}
+        extra_context.update({
+            'total_relations': total,
+            'archive_count': TermRelationArchive.objects.count(),
+            'compress_delete_count': total - keep,
+            'compress_keep_count': keep,
+            'can_compress': total > 1,
+        })
+        return super().changelist_view(request, extra_context=extra_context)
+
+    # ------------------------------------------------------------------
+    # Кастомные URL-маршруты
+    # ------------------------------------------------------------------
+
+    def get_urls(self):
+        custom = [
+            path('compress/', self.admin_site.admin_view(self.compress_view),
+                 name='main_termrelation_compress'),
+            path('restore/', self.admin_site.admin_view(self.restore_view),
+                 name='main_termrelation_restore'),
+        ]
+        return custom + super().get_urls()
+
+    # ------------------------------------------------------------------
+    # φ-компрессия
+    # ------------------------------------------------------------------
+
+    def compress_view(self, request):
+        if request.method != 'POST':
+            return HttpResponseRedirect('../')
+
+        total = TermRelation.objects.count()
+        if total < 2:
+            self.message_user(request, 'Недостаточно связей для сжатия.', level='WARNING')
+            return HttpResponseRedirect('../')
+
+        keep = math.floor(total / PHI)
+        delete_count = total - keep
+
+        # Берём delete_count записей с наименьшим весом
+        to_delete = list(
+            TermRelation.objects
+            .order_by('weight', 'id')
+            .values('id', 'term1_id', 'term2_id')[:delete_count]
+        )
+
+        # Архивируем (ignore_conflicts — если пара уже в архиве, не падаем)
+        TermRelationArchive.objects.bulk_create(
+            [TermRelationArchive(term1_id=r['term1_id'], term2_id=r['term2_id'])
+             for r in to_delete],
+            ignore_conflicts=True,
+        )
+
+        # Удаляем из основной таблицы
+        TermRelation.objects.filter(id__in=[r['id'] for r in to_delete]).delete()
+
+        self.message_user(
+            request,
+            f'Сжатие выполнено: удалено {delete_count} связей из {total}, '
+            f'осталось {keep}. Удалённые пары сохранены в архив.',
+        )
+        return HttpResponseRedirect('../')
+
+    # ------------------------------------------------------------------
+    # Восстановление
+    # ------------------------------------------------------------------
+
+    def restore_view(self, request):
+        if request.method != 'POST':
+            return HttpResponseRedirect('../')
+
+        archives = list(TermRelationArchive.objects.values('term1_id', 'term2_id'))
+        if not archives:
+            self.message_user(request, 'Архив пуст — нечего восстанавливать.', level='WARNING')
+            return HttpResponseRedirect('../')
+
+        restored = 0
+        for arch in archives:
+            t1_id, t2_id = arch['term1_id'], arch['term2_id']
+            # Гарантируем канонический порядок (как в TermRelation.save)
+            if t1_id > t2_id:
+                t1_id, t2_id = t2_id, t1_id
+            _, created = TermRelation.objects.get_or_create(
+                term1_id=t1_id,
+                term2_id=t2_id,
+                defaults={'weight': 1.0},
+            )
+            if created:
+                restored += 1
+
+        TermRelationArchive.objects.all().delete()
+
+        skipped = len(archives) - restored
+        msg = f'Восстановлено {restored} связей (вес = 1.0).'
+        if skipped:
+            msg += f' Пропущено {skipped} — уже существуют в таблице.'
+        self.message_user(request, msg)
+        return HttpResponseRedirect('../')
+
+
+@admin.register(TermRelationArchive)
+class TermRelationArchiveAdmin(admin.ModelAdmin):
+    list_display = ('term1_name', 'term2_name', 'compressed_at')
+    list_select_related = ('term1', 'term2')
+    search_fields = ('term1__term', 'term2__term')
+    readonly_fields = ('term1', 'term2', 'compressed_at')
+
+    def term1_name(self, obj):
+        return obj.term1.term
+    term1_name.short_description = 'Терм 1'
+
+    def term2_name(self, obj):
+        return obj.term2.term
+    term2_name.short_description = 'Терм 2'
+
+    def has_add_permission(self, request):
+        return False
